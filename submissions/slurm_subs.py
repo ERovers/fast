@@ -35,20 +35,24 @@ def _make_sbatch_lines(kwargs):
 
 
 def _gen_header(
-        queue, n_tasks, n_cpus, exclusive, email, max_time, job_name, kwargs):
+        account, n_tasks, n_cpus, exclusive, email, max_time, job_name, gpu, kwargs):
     """Generates an sbatch header file"""
     header = '#!/bin/bash\n\n'
     header += '# specify resources\n' + \
-        '#SBATCH --ntasks=' + n_tasks + '\n'\
-        '#SBATCH --cpus-per-task=' + n_cpus + '\n'
+        '#SBATCH --ntasks=' + n_tasks + '\n' + \
+        '#SBATCH --cpus-per-task=' + n_cpus + '\n' + \
+        '#SBATCH --mem=10G\n'
     if exclusive:
         header += '#SBATCH --exclusive\n'
+    if gpu:
+        header += '#SBATCH --nodes=1\n'
+        header += '#SBATCH --gpus-per-node=1\n'
     header += '\n# max wallclock time\n' + \
         '#SBATCH --time=' + str(max_time) + ':00:00\n'
     header += '\n# jobname\n' + \
         '#SBATCH --job-name=' + job_name + '\n'
-    header += '\n# queue\n' + \
-        '#SBATCH --partition=' + queue + '\n'
+    header += '\n# account\n' + \
+        '#SBATCH --account=' + account + '\n'
     if email is not None:
         header += '\n# mail alert' + \
             '#SBATCH --mail-type=ALL\n' + \
@@ -144,8 +148,8 @@ class SlurmSub(base):
 
     Parameters
     ----------
-    queue : str,
-        The queue to submit.
+    account : str,
+        The account which submits.
     n_tasks : int, default=1,
         The number of tasks for the submission job.
     n_cpus : int, default = 1,
@@ -154,20 +158,23 @@ class SlurmSub(base):
         To request exclusive use of a node.
     email : str, default = None,
         Email address to optionally email updates.
-    max_time : int, default = 1500,
+    max_time : int, default = 96,
         The maximum time for submission job in hours.
     job_name : str, default = None,
         The name of the submission job.
+    gpu : bool, default = False,
+        Wether to use a gpu or not, default is False
     """
     def __init__(
-            self, queue, n_tasks=1, n_cpus=1, exclusive=False, email=None,
-            max_time=1500, job_name=None, **kwargs):
-        self.queue = str(queue)
+            self, account, n_tasks=1, n_cpus=1, exclusive=False, email=None,
+            max_time=96, job_name=None, gpu=False, **kwargs):
+        self.account = str(account)
         self.n_tasks = str(n_tasks)
         self.n_cpus = str(n_cpus)
         self.exclusive = exclusive
         self.email = email
         self.max_time = str(max_time)
+        self.gpu = gpu
         if job_name is None:
             self.job_name = 'SlurmSub'
         else:
@@ -181,21 +188,22 @@ class SlurmSub(base):
     @property
     def config(self):
         config_dict = {
-            'queue': self.queue,
+            'account': self.account,
             'n_tasks': self.n_tasks,
             'n_cpus': self.n_cpus,
             'exclusive': self.exclusive,
             'email': self.email,
             'max_time': self.max_time,
-            'job_name': self.job_name}
+            'job_name': self.job_name,
+            'gpu': self.gpu}
         config_dict.update(self.kwargs)
         return config_dict
 
     def run(self, cmds, output_dir=None, output_name=None):
         # generate header file
         header = _gen_header(
-            self.queue, self.n_tasks, self.n_cpus, self.exclusive, self.email,
-            self.max_time, self.job_name, self.kwargs)
+            self.account, self.n_tasks, self.n_cpus, self.exclusive, self.email,
+            self.max_time, self.job_name, self.gpu, self.kwargs)
         # add commands
         if type(cmds) is str:
             sub_file = header + cmds
