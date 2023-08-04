@@ -78,6 +78,6 @@ class SASAWrap(base_analysis):
                 atom_indices=self.atom_indices_vals)
             # calculate and save SASA
             SASAs = md.shrake_rupley(centers)
-            total_sasa = SASAs.sum(axis=1)
+            total_sasa = np.array(list(SASAs.sum(axis=1)))
             np.save(self.output_name, total_sasa)
         
