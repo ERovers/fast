@@ -40,13 +40,15 @@ def _gen_header(
     header = '#!/bin/bash\n\n'
     header += '# specify resources\n' + \
         '#SBATCH --ntasks=' + n_tasks + '\n' + \
-        '#SBATCH --cpus-per-task=' + n_cpus + '\n' + \
-        '#SBATCH --mem=10G\n'
+        '#SBATCH --cpus-per-task=' + n_cpus + '\n'
     if exclusive:
         header += '#SBATCH --exclusive\n'
     if gpu:
         header += '#SBATCH --nodes=1\n'
         header += '#SBATCH --gpus-per-node=1\n'
+        header += '#SBATCH --mem=1G\n'
+    else:
+        header += '#SBATCH --mem=100G\n'
     header += '\n# max wallclock time\n' + \
         '#SBATCH --time=' + str(max_time) + ':00:00\n'
     header += '\n# jobname\n' + \
