@@ -4,7 +4,7 @@
 # All rights reserved.
 # Unauthorized copying of this file, via any medium, is strictly prohibited
 # Proprietary and confidential
-# adjusted by Evianne Rovers
+# have reference structures (10 RMSD) maximize minimum rmsd to references
 
 #######################################################################
 # imports
@@ -16,6 +16,7 @@ import glob
 import mdtraj as md
 import numpy as np
 import os
+import subprocess
 from .base_analysis import base_analysis
 from .. import tools
 
@@ -82,9 +83,14 @@ class RMSD_PROTACWrap(base_analysis):
         if os.path.exists(self.output_name):
             pass
         else:
+            if not os.path.exists("reference.xtc"):
+               subprocess.call("gmx trjconv -f "+self.base_struct+" -o reference.xtc")
             # load centers
             centers = md.load(
                 "./data/full_centers.xtc", top=self.base_struct_md,
+                atom_indices=self.atom_indices_vals)
+            # load references
+            ref_struct = md.load("reference.xtc", top=self.base_struct_md,
                 atom_indices=self.atom_indices_vals)
             # get subset if necessary
             if self.atom_indices_vals is None:
@@ -98,4 +104,11 @@ class RMSD_PROTACWrap(base_analysis):
                 tmp.sort()
                 rmsds.append(rmsd[1])
             np.save(self.output_name, rmsds)
-        
+            # save the complexes that differ more than 10 A from any of the references (to be references for future runs)
+            idx = np.argwhere(rmsds>10)
+            tmp2 = self.base_struct_md
+            if len(idx>0):
+                for i in idx:
+                    tmp2 = md.join([tmp2,centers[i]])
+                with md.formats.XTCTrajectoryFile('reference.xtc', 'w') as f:
+                    f.write(tmp2)
