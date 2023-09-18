@@ -25,7 +25,7 @@ from .. import tools
 #######################################################################
 
 
-class RMSDWrap(base_analysis):
+class RMSD_PROTACWrap(base_analysis):
     """Analysis wrapper for calculating state rmsds
 
     Parameters
