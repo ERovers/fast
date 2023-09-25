@@ -16,7 +16,7 @@ import glob
 import mdtraj as md
 import numpy as np
 import os
-import subprocess
+from subprocess import call
 from .base_analysis import base_analysis
 from .. import tools
 
@@ -84,7 +84,7 @@ class RMSD_PROTACWrap(base_analysis):
             pass
         else:
             if not os.path.exists("reference.xtc"):
-               subprocess.call("gmx trjconv -f "+self.base_struct+" -o reference.xtc")
+               call("gmx trjconv -f "+self.base_struct+" -o reference.xtc", shell=True)
             # load centers
             centers = md.load(
                 "./data/full_centers.xtc", top=self.base_struct_md,
@@ -92,20 +92,18 @@ class RMSD_PROTACWrap(base_analysis):
             # load references
             ref_struct = md.load("reference.xtc", top=self.base_struct_md,
                 atom_indices=self.atom_indices_vals)
-            # get subset if necessary
-            if self.atom_indices_vals is None:
-                struct_sub = self.base_struct_md
-            else:
-                struct_sub = self.base_struct_md.atom_slice(self.atom_indices_vals)
             # calculate and save rmsds
             rmsds = []
-            for frame in centers: 
+            for frame in ref_struct: 
                 tmp = md.rmsd(centers, frame)
-                tmp.sort()
-                rmsds.append(rmsd[1])
-            np.save(self.output_name, rmsds)
-            # save the complexes that differ more than 10 A from any of the references (to be references for future runs)
-            idx = np.argwhere(rmsds>10)
+                rmsds.append(tmp)
+            rmsd_final = np.array(rmsds).min(axis=0)
+            np.save(self.output_name, rmsd_final)
+            # save the complexes that differ more than 10 A from any of the references (to be references for future generation)
+            idx = np.argwhere(rmsd_final>10)
+            del centers
+            centers = md.load(
+                "./data/full_centers.xtc", top=self.base_struct_md)
             tmp2 = self.base_struct_md
             if len(idx>0):
                 for i in idx:

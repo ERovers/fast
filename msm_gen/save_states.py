@@ -182,8 +182,11 @@ def save_states(
         for pci in partitioned_centers_info:
             _save_states(pci)
     else:
+        print("got in the last statement")
+        print(len(partitioned_centers_info))
+
         with Pool(processes=n_procs) as pool:
-            pool.map(_save_states, partitioned_centers_info)
+            list(pool.imap(_save_states, partitioned_centers_info, chunksize=1))
 #        pool = Pool(processes=n_procs)
 #        pool.map(_save_states, partitioned_centers_info)
 #        pool.terminate()
@@ -284,6 +287,7 @@ class SaveWrap(base):
                 assignments, distances, state_nums=state_nums,
                 n_procs=self.n_procs, largest_center=self.largest_center,
                 save_routine=self.save_routine, msm_dir=msm_dir)
+            print("done saving states")
         if self.save_xtc_centers:
             center_filenames = np.sort(glob.glob("%s/centers_masses/*.pdb" % msm_dir))
             trj_lengths, xyzs = load_as_concatenated(center_filenames, processes=self.n_procs)

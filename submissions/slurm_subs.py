@@ -48,7 +48,7 @@ def _gen_header(
         header += '#SBATCH --gpus-per-node=1\n'
         header += '#SBATCH --mem=1G\n'
     else:
-        header += '#SBATCH --mem=100G\n'
+        header += '#SBATCH --mem=150G\n'
     header += '\n# max wallclock time\n' + \
         '#SBATCH --time=' + str(max_time) + ':00:00\n'
     header += '\n# jobname\n' + \
