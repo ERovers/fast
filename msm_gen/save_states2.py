@@ -41,6 +41,7 @@ def _save_states(centers_info):
     trj_filename = centers_info['trj_filename'][0]
     save_routine = centers_info['save_routine'][0]
     msm_dir = centers_info['msm_dir'][0]
+    start = centers_info['start'][0]
     if save_routine == 'full':
         save_masses = True
         save_restarts = True
@@ -61,7 +62,7 @@ def _save_states(centers_info):
     if save_restarts:
         trj_full = md.load(
             msm_dir + '/trajectories_full/' + trj_filename,
-            top=msm_dir + "/restart.gro")
+            top=msm_dir + '/starting_structures/start'+str(start)+'.gro')
     for num in range(len(states)):
         if save_masses:
             # save center after processing
@@ -83,7 +84,6 @@ def _save_states(centers_info):
     if save_restarts:
         del trj_full
     return
-
 
 def save_states(
         assignments, distances, state_nums=None, save_routine='full',
@@ -137,11 +137,11 @@ def save_states(
                 s.split("/")[-1]
                 for s in glob.glob(msm_dir + "/trajectories/*.xtc")]))
     topology = "prot_masses.pdb"
-    # reduce the number of conformations to search through
     reduced_iis = ra.where((distances > -0.1)*(distances < largest_center))
     reduced_assignments = assignments[reduced_iis]
     reduced_distances = distances[reduced_iis]
     centers_location = []
+    multi_dir = np.load(msm_dir + '/trj_start.npy', allow_pickle=True).item() 
     for state in state_nums:
         state_iis = np.where(reduced_assignments == state)
         nconfs_in_state = len(state_iis[0])
@@ -162,17 +162,20 @@ def save_states(
         frame_nums = reduced_iis[1][state_iis[0][state_centers]]
         for conf_num in range(n_confs):
             trj_num = trj_locations[conf_num]
+            start = multi_dir[trj_filenames[trj_num]]
             centers_location.append(
                 (
                     state, conf_num, trj_num,
                     frame_nums[conf_num], trj_filenames[trj_num],
-                    save_routine, msm_dir))
+                    save_routine, msm_dir, start))
     if type(topology) == str:
         centers_location = np.array(
             centers_location, dtype=[
                 ('state', 'int'), ('conf', 'int'), ('trj_num', 'int'),
                 ('frame', 'int'), ('trj_filename', np.str_, 800),
-                ('save_routine', np.str_, 10), ('msm_dir', np.str_, 800)])
+                ('save_routine', np.str_, 10), ('msm_dir', np.str_, 800),
+                ('start', 'int')])
+    np.save(msm_dir + '/tmp_state_start.npy', dict(zip(centers_location['state'],centers_location['start'])))
     unique_trjs = np.unique(centers_location['trj_num'])
     partitioned_centers_info = []
     for trj in unique_trjs:
@@ -187,11 +190,7 @@ def save_states(
 
         with Pool(processes=n_procs) as pool:
             list(pool.imap(_save_states, partitioned_centers_info, chunksize=1))
-#        pool = Pool(processes=n_procs)
-#        pool.map(_save_states, partitioned_centers_info)
-#        pool.terminate()
     return
-
 
 class SaveWrap(base):
     """Save states wrapping object

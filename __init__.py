@@ -6,6 +6,8 @@ from .analysis.pockets import PocketWrap
 from .analysis.distances import DistWrap
 from .analysis.SASA import SASAWrap
 from .analysis.rmsd_PROTAC import RMSD_PROTACWrap
+from .analysis.PocketSASA import PocketSASAWrap
+from .analysis.interface_area import InterfaceWrap
 
 # simulations wrapper
 from .md_gen.gromax import Gromax, GromaxProcessing

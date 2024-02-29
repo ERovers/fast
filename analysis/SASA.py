@@ -78,6 +78,5 @@ class SASAWrap(base_analysis):
             # calculate and save SASA
             SASAs = md.shrake_rupley(centers)
             total_sasa = SASAs.sum(axis=1)
-            print(total_sasa)
             np.save(self.output_name, total_sasa)
         

@@ -21,11 +21,12 @@ import pickle
 import scipy.io
 import subprocess as sp
 import time
+import copy
 from . import rankings
 from .. import tools
 from ..base import base
 from ..exception import DataInvalid, MissingData
-from ..msm_gen import SaveWrap
+from ..msm_gen.save_states2 import SaveWrap
 from ..submissions import slurm_subs
 from ..submissions import lsf_subs
 from enspara.msm import builders, MSM
@@ -57,13 +58,14 @@ def _setup_directories(output_dir):
     cmd7 = 'mkdir ' + msm_dir + '/centers_masses'
     cmd8 = 'mkdir ' + msm_dir + '/centers_restarts'
     cmd9 = 'mkdir ' + msm_dir + '/submissions'
-    cmds = [cmd1, cmd2, cmd3, cmd4, cmd5, cmd6, cmd7, cmd8, cmd9]
+    cmd10 = 'mkdir ' + msm_dir + '/starting_structures'
+    cmds = [cmd1, cmd2, cmd3, cmd4, cmd5, cmd6, cmd7, cmd8, cmd9, cmd10]
     out = tools.run_commands(cmds)
     return msm_dir
 
 
 def _gen_initial_sims(
-        base_dir, initial_struct, trj_obj, n_kids, q_check_obj):
+        base_dir, initial_struct, trj_obj, n_kids, q_check_obj, multi):
     """Runs the first round of adaptive sampling. Currently runs
     simulations from a single structure.
 
@@ -81,24 +83,31 @@ def _gen_initial_sims(
     q_check_obj : object,
         Queueing system wrapper to determine if simulations are
         still running.
+    multi : bool, default=False
+        Flag for starting from multiple starting structures.
     """
     t0 = time.time()
     # generate initial gen directory
     gen0_dir = base_dir + '/gen0'
     cmd = 'mkdir ' + gen0_dir
     _ = tools.run_commands(cmd)
+    multi_dir = np.load(base_dir + '/msm/trj_start.npy', allow_pickle=True).item() 
     # Spawn simulations
     pids = []
+    if not multi:
+        initial_struct = [initial_struct for kid in range(n_kids)]
     for kid in range(n_kids):
         # generate kid directory
         kid_dir = gen0_dir + '/kid'+str(kid)
         cmd = 'mkdir ' + kid_dir
         _ = tools.run_commands(cmd)
         # submit job based on trj_obj and retain pid
-        pid = trj_obj.run(initial_struct, kid_dir)
+        fut_trj_filename = 'trj_gen000_kid' + ('%03d' % kid) + '.xtc'
+        num = multi_dir[fut_trj_filename]
+        pid = trj_obj[num].run(initial_struct[kid], kid_dir)
         pids.append(pid)
         # wait for a job to finish if maximum number of simulations are
-        #still running
+        # still running
         q_check_obj.wait_for_pids(np.array(pids))
     # gather all pids and wait for every simulation to finish
     pids = np.array(pids)
@@ -134,6 +143,7 @@ def _prop_sims(base_dir, trj_obj, gen_num, q_check_obj, new_states):
     cmd = 'mkdir ' + gen_dir
     _ = tools.run_commands(cmd)
     pids = []
+    multi_dir = np.load(base_dir + '/msm/trj_start.npy', allow_pickle=True).item()
     # propagate simulations
     for kid in range(len(new_states)):
         # generate kid directory
@@ -141,9 +151,11 @@ def _prop_sims(base_dir, trj_obj, gen_num, q_check_obj, new_states):
         cmd = 'mkdir ' + kid_dir
         _ = tools.run_commands(cmd)
         # run simulation and gather pid
+        fut_trj_filename = 'trj_gen' + ('%03d' % gen_num) + '_kid' + ('%03d' % kid) + '.xtc'
+        num = multi_dir[fut_trj_filename]
         filename = base_dir + '/msm/centers_restarts/state' + \
             ('%06d' % new_states[kid]) + '-00.gro'
-        pid = trj_obj.run(filename, kid_dir)
+        pid = trj_obj[num].run(filename, kid_dir)
         pids.append(pid)
         # wait for a job to finish if maximum number of simulations are
         #still running
@@ -410,13 +422,24 @@ def push_forward(s, num=0):
         ["".join(itertools.repeat(" ", num)) + l for l in s_out])
     return s_pushed
 
+def _gen_sim_obj_multi(names, sim_obj):
+    "Generates multiple simulation objects for each starting structure"
+
+    list_sim_obj = []
+    for name in names:
+        tmp_sim_obj = copy.deepcopy(sim_obj)
+        tmp_sim_obj.top_file = name+'.top'
+        tmp_sim_obj.index_file = name+'.ndx'
+        tmp_sim_obj.processing_obj.index_file = name+'.ndx'
+        list_sim_obj.append(tmp_sim_obj)
+    return list_sim_obj
 
 class AdaptiveSampling(base):
     """Performs adaptive sampling
 
     Parameters
     ----------
-    initial_state : str or MDTraj object,
+    initial_state : str, MDTraj object or list of starting structures,
         The starting structure for adaptive sampling.
     n_gens : int, default=1,
         The number of generations of sampling to perform.
@@ -463,6 +486,9 @@ class AdaptiveSampling(base):
         still running.
     output_dir : str, default='adaptive_sampling',
         The output directory name for adaptive sampling run.
+    multi : bool, default=False,
+        Flag to indicate if multiple starting structures are used to start
+        initial simulations.
     """
 
     def __init__(
@@ -471,12 +497,16 @@ class AdaptiveSampling(base):
             analysis_obj=None, ranking_obj=None, spreading_func=None,
             update_freq=np.inf, continue_prev=False, sub_obj=None,
             q_check_obj=None, q_check_obj_sim=None,
-            output_dir='adaptive_sampling', verbose=True):
+            output_dir='adaptive_sampling', multi=False, verbose=True):
         # Initialize class variables
-        self.sim_obj = sim_obj
         self.initial_state = initial_state
         if type(self.initial_state) is str:
             self.initial_state_md = md.load(self.initial_state)
+        elif type(self.initial_state) is list:
+            starting_structures = []
+            for state in self.initial_state:
+                starting_structures.append(md.load(state))
+            self.initial_state_md = starting_structures
         else:
             self.initial_state_md = self.initial_state
         self.n_gens = n_gens
@@ -518,6 +548,13 @@ class AdaptiveSampling(base):
             self.q_check_obj_sim = q_check_obj_sim
         self.output_dir = os.path.abspath(output_dir)
         self.msm_dir = self.output_dir + '/msm'
+        self.multi = multi
+        if self.multi:
+            names = [self.msm_dir + '/starting_structures/start'+str(i) for i in range(n_kids)]
+            self.sim_obj = _gen_sim_obj_multi(names, sim_obj)
+        else:
+            names = [self.msm_dir + '/starting_structures/restart']
+            self.sim_obj = _gen_sim_obj_multi(names, sim_obj)
         self.verbose = verbose
 
     @property
@@ -541,6 +578,7 @@ class AdaptiveSampling(base):
             'q_check_obj': self.q_check_obj,
             'q_check_obj_sim': self.q_check_obj_sim,
             'output_dir': self.output_dir,
+            'multi': self.multi,
             'verbose': self.verbose,
         }
 
@@ -619,22 +657,50 @@ class AdaptiveSampling(base):
             _setup_directories(self.output_dir)
             # save starting state in msm directory. Will be used to load
             # and save trajectories for restarting simulations
-            try:
-                self.initial_state_md.save_gro(msm_dir + '/restart.gro')
-            except:
-                logging.warning(
-                    "Could not save initial state. Initial state is not pdb or gro?")
-                self.cluster_obj.base_struct_md.save_gro(msm_dir + '/restart.gro')
-
+            if not self.multi:
+                try:
+                    self.initial_state_md.save_gro(msm_dir + '/starting_structures/restart.gro')
+                except:
+                    logging.warning(
+                        "Could not save initial state. Initial state is not pdb or gro?")
+                    self.cluster_obj.base_struct_md.save_gro(msm_dir + '/starting_structures/restart.gro')
+                fut_start = [0 for kid in range(self.n_kids)]
+                fut_trj_filenames = ['trj_gen000_kid' + ('%03d' % kid) + '.xtc' for kid in range(self.n_kids)]
+                multi_dir = dict(zip(fut_trj_filenames,fut_start))
+                np.save(msm_dir + '/trj_start.npy', multi_dir)
+                cmd = 'mv ' + self.sim_obj[0].top_filename + ' ' + msm_dir + '/starting_structures/restart.top'
+                cmd2 = 'mv *.itp ' + msm_dir + '/starting_structures/'
+                cmd3 = 'mv ' + self.sim_obj[0].index_filename + ' ' + msm_dir + '/starting_structures/restart.ndx'
+                cmds = [cmd, cmd2, cmd3]
+                tools.run_commands(cmds)
+            else:
+                for i in range(0,len(self.initial_state_md)):
+                    try:
+                        self.initial_state_md[i].save_gro(msm_dir + '/starting_structures/start'+str(i)+'.gro')
+                    except:
+                        logging.warning(
+                            "Could not save initial state. Initial state is not pdb or gro?")
+                    _state = self.initial_state[i].split('.')[0]
+                    print(_state)
+                    cmd = 'mv '+_state+'.top ' + msm_dir + '/starting_structures/start'+str(i)+'.top'
+                    cmd2 = 'mv '+_state+'.ndx ' + msm_dir + '/starting_structures/start'+str(i)+'.ndx'
+                    cmds = [cmd, cmd2]
+                    tools.run_commands(cmds)
+                cmd = 'mv *.itp ' + msm_dir + '/starting_structures/'
+                tools.run_commands(cmd)
+                fut_start = [kid for kid in range(self.n_kids)]
+                fut_trj_filenames = ['trj_gen000_kid' + ('%03d' % kid) + '.xtc' for kid in range(self.n_kids)]
+                multi_dir = dict(zip(fut_trj_filenames,fut_start))
+                np.save(msm_dir + '/trj_start.npy', multi_dir)
             ###########################################################
             #                  STEP 1 (simulations)                   #
             ###########################################################
-
+            
             # initialize first run of sampling
             logging.info('starting initial simulations')
             _gen_initial_sims(
-                self.output_dir, self.initial_state_md, self.sim_obj,
-                self.n_kids, self.q_check_obj_sim)
+                self.output_dir,self.initial_state_md, self.sim_obj,
+                self.n_kids, self.q_check_obj_sim, self.multi)
             # move trajectories after sampling
             logging.info('moving trajectories')
             _move_trjs(gen_dir, self.msm_dir, gen_num, self.n_kids)
@@ -844,6 +910,15 @@ class AdaptiveSampling(base):
 
             logging.info('STARTING GEN NUM: %d' % gen_num)
             gen_dir = self.output_dir + '/gen' + str(gen_num)
+            # adding information about starting structures in dictionary
+            new_states = np.load(self.msm_dir + '/rankings/states_to_simulate_gen' + \
+                str(gen_num-1) + '.npy')
+            state_start = np.load(self.msm_dir + '/tmp_state_start.npy', allow_pickle=True).item()
+            fut_trj_filenames = ['trj_gen' + ('%03d' % (gen_num)) + '_kid' + ('%03d' % kid) + '.xtc' for kid in range(self.n_kids)]
+            fut_start = [state_start[state] for state in new_states]
+            multi_dir = np.load(msm_dir + '/trj_start.npy', allow_pickle=True).item()
+            multi_dir.update(dict(zip(fut_trj_filenames,fut_start)))
+            np.save(msm_dir + '/trj_start.npy', multi_dir)
             # propagate trajectories
             str_states = ", ".join([str(state) for state in new_states])
             logging.info('starting simulations for states: ' + str_states)

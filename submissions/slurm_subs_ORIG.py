@@ -10,7 +10,6 @@
 #######################################################################
 
 import numpy as np
-import logging
 import os
 import subprocess as sp
 import time
@@ -23,8 +22,6 @@ from ..exception import UnexpectedResult
 # code
 #######################################################################
 
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
 
 def _make_sbatch_lines(kwargs):
     """makes keyword lines in an sbatch script from kwargs"""
@@ -71,27 +68,26 @@ def _gen_header(
 
 def get_running_jobs():
     """Finds jobs that are currently running"""
-    while True:
-        try:
-            squeue_output = tools.run_commands('squeue')[0]
-            job_listing_information = squeue_output.split("\n")[:-1]
-            running_jobs = ra.RaggedArray(
-                [
-                    s.split() for s in 
-                    job_listing_information])[:,0]
-            if running_jobs[0] != 'JOBID':
-                raise UnexpectedResult(
-                    'slurm queue wrapper failed to parse jobs!')
-            else:
-                running_jobs = running_jobs[1:]
-        except:
-            logger.log("an error has occured with finding jobs...")
-            logger.log("for error checking purposes: ")
-            logger.log(squeue_output)
-            logger.log(job_listing_information)
-            logger.log(running_jobs)
-            continue
-        break
+    try:
+        squeue_output = tools.run_commands('squeue')[0]
+        job_listing_information = squeue_output.split("\n")[:-1]
+        running_jobs = ra.RaggedArray(
+            [
+                s.split() for s in 
+                job_listing_information])[:,0]
+        if running_jobs[0] != 'JOBID':
+            raise UnexpectedResult(
+                'slurm queue wrapper failed to parse jobs!')
+        else:
+            running_jobs = running_jobs[1:]
+    except:
+        logger.log("an error has occured with finding jobs...")
+        logger.log("for error checking purposes: ")
+        logger.log(squeue_output)
+        logger.log(job_listing_information)
+        logger.log(running_jobs)
+        raise UnexpectedResult(
+            'slurm queue wrapper failed to parse jobs!')
     return np.array(running_jobs)
 
 

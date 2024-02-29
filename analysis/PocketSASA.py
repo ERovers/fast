@@ -1,6 +1,6 @@
-# Author: Maxwell I. Zimmerman <mizimmer@wustl.edu>
+# Author: Evianne M. Rovers <evianne.rovers@mail.utoronto.ca>
 # Contributors:
-# Copywright (C) 2017, Washington University in St. Louis
+# Copywright (C) 2023, University of Toronto
 # All rights reserved.
 # Unauthorized copying of this file, via any medium, is strictly prohibited
 # Proprietary and confidential
@@ -25,8 +25,8 @@ from .. import tools
 #######################################################################
 
 
-class RMSDWrap(base_analysis):
-    """Analysis wrapper for calculating state rmsds
+class PocketSASAWrap(base_analysis):
+    """Analysis wrapper for calculating state SASA
 
     Parameters
     ----------
@@ -34,9 +34,6 @@ class RMSDWrap(base_analysis):
         The base structure to compare for native contacts. This
         topology must match the structures to analyse. Can be provided
         as a pdb location or an md.Trajectory object.
-    atom_indices : str or array,
-        The atom indices to use for computing native contacts. Can be
-        provided as a data file to load or an array.
 
     Attributes
     ----------
@@ -47,26 +44,21 @@ class RMSDWrap(base_analysis):
             self, base_struct, atom_indices=None):
         # determine base_struct
         self.base_struct = base_struct
+        pdb = md.load(self.base_struct)
+        self.atom_indices=pdb.top.select("resSeq 95 97 148 194 238 240 256 310 365 366 367 414 430")
         if type(base_struct) is md.Trajectory:
             self.base_struct_md = self.base_struct
         else:
             self.base_struct_md = md.load(base_struct)
-        # determine atom indices
-        self.atom_indices = atom_indices
-        if type(atom_indices) is str:
-            self.atom_indices_vals = np.loadtxt(atom_indices, dtype=int)
-        else:
-            self.atom_indices_vals = self.atom_indices
 
     @property
     def class_name(self):
-        return "RMSDWrap"
+        return "PocketSASAWrap"
 
     @property
     def config(self):
         return {
             'base_struct': self.base_struct,
-            'atom_indices': self.atom_indices,
         }
 
     @property
@@ -75,7 +67,7 @@ class RMSDWrap(base_analysis):
 
     @property
     def base_output_name(self):
-        return "rmsd_per_state"
+        return "SASA_per_state"
 
     def run(self):
         # determine if file already exists
@@ -84,14 +76,11 @@ class RMSDWrap(base_analysis):
         else:
             # load centers
             centers = md.load(
-                "./data/full_centers.xtc", top=self.base_struct_md,
-                atom_indices=self.atom_indices_vals)
-            # get subset if necessary
-            if self.atom_indices_vals is None:
-                struct_sub = self.base_struct_md
-            else:
-                struct_sub = self.base_struct_md.atom_slice(self.atom_indices_vals)
-            # calculate and save rmsds
-            rmsds = md.rmsd(centers, struct_sub)
-            np.save(self.output_name, rmsds)
+                "./data/full_centers.xtc", top=self.base_struct_md)
+            # calculate and save SASA
+            sasa = md.shrake_rupley(centers)
+            #atom_indices_int=self.atom_indices.astype(int)
+            pocket_sasa = sasa[:,self.atom_indices]
+            total_pocket_sasa = pocket_sasa.sum(axis=1)
+            np.save(self.output_name, total_pocket_sasa)
         

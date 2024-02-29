@@ -34,10 +34,10 @@ class GromaxProcessing(base):
         self.output_group = str(output_group)
         self.pbc = pbc
         self.ur = ur
-        if index_file is None:
-            self.index_file = index_file
-        else:
+        if type(index_file) is str:
             self.index_file = os.path.abspath(index_file)
+        else:
+            self.index_file = index_file
 
     @property
     def class_name(self):
@@ -83,8 +83,9 @@ class Gromax(base):
 
     Parameters
     ----------
-    top_file : str,
-        Gromacs topology filename.
+    top_file : str or None,
+        Gromacs topology filename or None in case FAST protocol is 
+        started from multiple starting structures.
     mdp_file : str,
         Gromacs mdp file that specifies simulation parameters.
     n_cpus : int, default = 1,
@@ -112,14 +113,20 @@ class Gromax(base):
         simulations.
     env_exports : str, default=None,
         A list of commands to submit before running a job.
+    multi : bool, default=False,
+        Flag for starting FAST from multiple starting 
+        structures.
     """
     def __init__(
             self, top_file, mdp_file, n_cpus=1, n_gpus=None,
             processing_obj=None, index_file=None, itp_files=None,
             submission_obj=None, max_warn=2, min_run=False, source_file=None,
-            env_exports=None, **kwargs):
+            env_exports=None, multi=False, **kwargs):
         """initialize some gromax files and parameters"""
-        self.top_file = os.path.abspath(top_file)
+        if not multi:
+            self.top_file = os.path.abspath(top_file)
+        else:
+            self.top_file = top_file
         self.mdp_file = os.path.abspath(mdp_file)
         self.n_cpus = n_cpus
         self.n_gpus = n_gpus
